@@ -1,0 +1,109 @@
+#!/bin/bash
+
+# File to store the tasks
+TASK_FILE="tasks.json"
+
+# Ensure the task file exists and is initialized as a JSON array
+if [ ! -f $TASK_FILE ]; then
+    echo "[]" > $TASK_FILE
+fi
+
+function create_task() {
+    echo "Enter title: "
+    read title
+    echo "Enter description (optional): "
+    read description
+    echo "Enter location (optional): "
+    read location
+    echo "Enter due date (YYYY-MM-DD): "
+    read due_date
+
+    # Generate a unique identifier for the task
+    local id=$(date +%s)
+
+    # New task JSON object
+    local new_task=$(jq -n \
+                        --arg id "$id" \
+                        --arg title "$title" \
+                        --arg desc "$description" \
+                        --arg loc "$location" \
+                        --arg due "$due_date" \
+                        --arg comp "false" \
+                        '{id: $id, title: $title, description: $desc, location: $loc, due_date: $due, completed: $comp}')
+
+    # Append to the task file
+    jq --argjson task "$new_task" '. += [$task]' $TASK_FILE > temp.json && mv temp.json $TASK_FILE
+}
+
+function list_tasks() {
+    local date_filter=$(date +%Y-%m-%d)
+    echo "Tasks for today (Completed and Uncompleted):"
+    jq --arg date "$date_filter" '.[] | select(.due_date == $date) | [.id, .title, .completed] | @csv' $TASK_FILE
+}
+
+function delete_task() {
+    echo "Enter task id to delete: "
+    read task_id
+    jq --arg id "$task_id" 'map(select(.id != $id))' $TASK_FILE > temp.json && mv temp.json $TASK_FILE
+}
+
+function update_task() {
+    echo "Enter task id to update: "
+    read task_id
+    echo "Enter new title: "
+    read new_title
+    echo "Enter new description (optional): "
+    read new_description
+    echo "Enter new location (optional): "
+    read new_location
+    echo "Enter new due date (YYYY-MM-DD): "
+    read new_due_date
+    echo "Completed (true/false): "
+    read new_completed
+
+    jq --arg id "$task_id" \
+       --arg title "$new_title" \
+       --arg desc "$new_description" \
+       --arg loc "$new_location" \
+       --arg due "$new_due_date" \
+       --arg comp "$new_completed" \
+       'map(if .id == $id then .title = $title | .description = $desc | .location = $loc | .due_date = $due | .completed = $comp else . end)' $TASK_FILE > temp.json && mv temp.json $TASK_FILE
+}
+
+function show_task() {
+    echo "Enter task id to show: "
+    read task_id
+    jq --arg id "$task_id" '.[] | select(.id == $id)' $TASK_FILE
+}
+
+function search_task_by_title() {
+    echo "Enter title to search: "
+    read title_search
+    jq --arg title "$title_search" '.[] | select(.title | test($title; "i"))' $TASK_FILE
+}
+
+# Process command line arguments
+case "$1" in
+  create)
+    create_task
+    ;;
+  update)
+    update_task
+    ;;
+  delete)
+    delete_task
+    ;;
+  show)
+    show_task
+    ;;
+  list)
+    list_tasks
+    ;;
+  search)
+    search_task_by_title
+    ;;
+  *)
+    echo "Usage: $0 {create|update|delete|show|list|search}" >&2
+    exit 1
+    ;;
+esac
